@@ -35,28 +35,71 @@ class WireManager {
     return { ok: true };
   }
 
-  /* DFS 检测：添加 from→to 边后是否产生环 */
+  /* 检测添加 from→to 边后是否产生环（三色标记法）
+   * 原理：若添加 from→to 后存在环，则环必含此新边，即 to 能到达 from
+   * 颜色状态：0 = 未访问 (WHITE), 1 = 访问中 (GRAY), 2 = 已访问 (BLACK) */
   wouldCreateCycle(fromId, toId) {
+    /* 构建临时邻接表（包含待添加的 from→to 边） */
     const adj = new Map();
+    const nodes = new Set();
     for (const w of this.wires.values()) {
       if (!adj.has(w.from.nodeId)) adj.set(w.from.nodeId, []);
       adj.get(w.from.nodeId).push(w.to.nodeId);
+      nodes.add(w.from.nodeId); nodes.add(w.to.nodeId);
     }
     if (!adj.has(fromId)) adj.set(fromId, []);
     adj.get(fromId).push(toId);
-    const visited = new Set();
-    const stack = new Set();
-    const dfs = (u) => {
-      visited.add(u); stack.add(u);
-      const next = adj.get(u) || [];
-      for (const v of next) {
-        if (!visited.has(v)) { if (dfs(v)) return true; }
-        else if (stack.has(v)) return true;
+    nodes.add(fromId); nodes.add(toId);
+
+    /* 从 to 出发，看能不能到达 from —— 若能，则添加 from→to 后形成环 */
+    const color = new Map();
+    for (const n of nodes) color.set(n, 0);
+
+    const hasCycleFrom = (start) => {
+      const stack = [{ node: start, iter: 0 }];
+      const pathSet = new Set();
+      pathSet.add(start);
+      color.set(start, 1);
+
+      while (stack.length > 0) {
+        const top = stack[stack.length - 1];
+        const neighbors = adj.get(top.node) || [];
+
+        if (top.iter < neighbors.length) {
+          const v = neighbors[top.iter];
+          top.iter++;
+
+          const c = color.get(v) ?? 0;
+          if (c === 1) {
+            return true;
+          }
+          if (c === 0) {
+            color.set(v, 1);
+            pathSet.add(v);
+            stack.push({ node: v, iter: 0 });
+          }
+        } else {
+          color.set(top.node, 2);
+          pathSet.delete(top.node);
+          stack.pop();
+        }
       }
-      stack.delete(u);
       return false;
     };
-    return dfs(toId) || dfs(fromId);
+
+    /* 因为只关心 "to 能否到达 from"，所以只需要从 to 开始 DFS 即可 */
+    if (color.get(toId) === 0) {
+      if (hasCycleFrom(toId)) return true;
+    }
+
+    /* 保险起见：再扫一遍所有未访问节点，防止图中已存在环（虽然理论上不应该） */
+    for (const n of nodes) {
+      if (color.get(n) === 0) {
+        if (hasCycleFrom(n)) return true;
+      }
+    }
+
+    return false;
   }
 
   add(from, to) {
