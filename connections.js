@@ -1,0 +1,190 @@
+/* =========================================================
+   connections.js · 连线系统
+   ========================================================= */
+
+class WireManager {
+  constructor(graph) {
+    this.graph = graph;
+    this.wires = new Map();
+    this.order = [];
+  }
+
+  clear() {
+    this.wires.clear();
+    this.order = [];
+  }
+
+  /* 校验连接是否合法（类型方向、重复、目标是否已占用、环检测） */
+  validate(from, to) {
+    if (!from || !to) return { ok: false, reason: '无效端口' };
+    if (from.type !== 'out' || to.type !== 'in')
+      return { ok: false, reason: '必须从输出端口连到输入端口' };
+    if (from.nodeId === to.nodeId)
+      return { ok: false, reason: '不能连接同一节点' };
+    const fIdx = from.index !== undefined ? from.index : from.portIndex;
+    const tIdx = to.index   !== undefined ? to.index   : to.portIndex;
+    for (const w of this.wires.values()) {
+      if (w.to.nodeId === to.nodeId && w.to.portIndex === tIdx)
+        return { ok: false, reason: '目标输入端口已被占用' };
+      if (w.from.nodeId === from.nodeId && w.from.portIndex === fIdx
+          && w.to.nodeId === to.nodeId && w.to.portIndex === tIdx)
+        return { ok: false, reason: '连线已存在' };
+    }
+    if (this.wouldCreateCycle(from.nodeId, to.nodeId))
+      return { ok: false, reason: '禁止形成循环回路' };
+    return { ok: true };
+  }
+
+  /* DFS 检测：添加 from→to 边后是否产生环 */
+  wouldCreateCycle(fromId, toId) {
+    const adj = new Map();
+    for (const w of this.wires.values()) {
+      if (!adj.has(w.from.nodeId)) adj.set(w.from.nodeId, []);
+      adj.get(w.from.nodeId).push(w.to.nodeId);
+    }
+    if (!adj.has(fromId)) adj.set(fromId, []);
+    adj.get(fromId).push(toId);
+    const visited = new Set();
+    const stack = new Set();
+    const dfs = (u) => {
+      visited.add(u); stack.add(u);
+      const next = adj.get(u) || [];
+      for (const v of next) {
+        if (!visited.has(v)) { if (dfs(v)) return true; }
+        else if (stack.has(v)) return true;
+      }
+      stack.delete(u);
+      return false;
+    };
+    return dfs(toId) || dfs(fromId);
+  }
+
+  add(from, to) {
+    const check = this.validate(from, to);
+    if (!check.ok) return check;
+    const id = uid('w');
+    const wire = {
+      id,
+      from: { nodeId: from.nodeId, portIndex: from.index },
+      to:   { nodeId: to.nodeId,   portIndex: to.index   },
+      flowing: [],
+    };
+    this.rebuildWireGeometry(wire);
+    this.wires.set(id, wire);
+    this.order.push(id);
+    return { ok: true, wire };
+  }
+
+  remove(id) {
+    this.wires.delete(id);
+    const i = this.order.indexOf(id);
+    if (i >= 0) this.order.splice(i, 1);
+  }
+
+  /* 根据端口位置重建贝塞尔曲线与弧长表 */
+  rebuildWireGeometry(wire) {
+    const fromNode = this.graph.get(wire.from.nodeId);
+    const toNode   = this.graph.get(wire.to.nodeId);
+    if (!fromNode || !toNode) return;
+    const fromPort = fromNode.outputs[wire.from.portIndex];
+    const toPort   = toNode.inputs[wire.to.portIndex];
+    const p0 = fromNode.getPortPos(fromPort);
+    const p3 = toNode.getPortPos(toPort);
+    const [cp1, cp2] = cubicControlPoints(p0, p3);
+    wire.p0 = p0; wire.p1 = cp1; wire.p2 = cp2; wire.p3 = p3;
+    wire.svgPath = bezierToSvgPath(p0, cp1, cp2, p3);
+    wire.arcTable = buildArcLengthTable(p0, cp1, cp2, p3, 80);
+  }
+
+  rebuildAll() {
+    for (const w of this.wires.values()) this.rebuildWireGeometry(w);
+  }
+
+  all() { return this.order.map(id => this.wires.get(id)); }
+
+  /* 获取进入某节点的所有连线（按输入端口顺序排，缺失则 null） */
+  incomingFor(nodeId) {
+    const node = this.graph.get(nodeId);
+    if (!node) return [];
+    const res = new Array(node.def.inputs).fill(null);
+    for (const w of this.wires.values()) {
+      if (w.to.nodeId === nodeId) res[w.to.portIndex] = w;
+    }
+    return res;
+  }
+
+  /* 获取从某节点出去的所有连线（按输出端口顺序） */
+  outgoingFor(nodeId) {
+    const node = this.graph.get(nodeId);
+    if (!node) return [];
+    const res = new Array(node.def.outputs).fill(null);
+    for (const w of this.wires.values()) {
+      if (w.from.nodeId === nodeId) res[w.from.portIndex] = w;
+    }
+    return res;
+  }
+}
+
+/* =========================================================
+   渲染连线到 SVG
+   ========================================================= */
+
+function renderWiresSvg(wireMgr, layerEl, tempLayerEl, tempWireData, svgNS, selectedWireId) {
+  layerEl.innerHTML = '';
+  tempLayerEl.innerHTML = '';
+
+  for (const w of wireMgr.all()) {
+    const g = document.createElementNS(svgNS, 'g');
+    g.setAttribute('data-wire-id', w.id);
+
+    const bg = document.createElementNS(svgNS, 'path');
+    bg.setAttribute('class', 'wire-bg');
+    bg.setAttribute('d', w.svgPath);
+    g.appendChild(bg);
+
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('class', `wire ${selectedWireId === w.id ? 'wire-selected' : ''}`);
+    path.setAttribute('d', w.svgPath);
+    path.setAttribute('stroke', selectedWireId === w.id
+      ? '#f5a623' : 'url(#wire-gradient)');
+    path.setAttribute('data-wire-id', w.id);
+    g.appendChild(path);
+
+    layerEl.appendChild(g);
+  }
+
+  if (tempWireData) {
+    const { from, mouse } = tempWireData;
+    const [cp1, cp2] = cubicControlPoints(from, mouse);
+    const d = bezierToSvgPath(from, cp1, cp2, mouse);
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('class', 'temp-wire');
+    path.setAttribute('d', d);
+    tempLayerEl.appendChild(path);
+  }
+}
+
+/* =========================================================
+   渲染流动中的材料（SVG group）
+   ========================================================= */
+
+function renderFlowingMaterialsSvg(wireMgr, layerEl, svgNS) {
+  layerEl.innerHTML = '';
+  for (const w of wireMgr.all()) {
+    for (const f of w.flowing) {
+      const info = pointAtDistance(w.arcTable, f.distance);
+      const g = document.createElementNS(svgNS, 'g');
+      g.setAttribute('class', 'material-group');
+      g.setAttribute('transform', `translate(${info.x}, ${info.y})`);
+      const inner = materialToSvg(f.material, 0, 0, 14);
+      g.innerHTML = inner;
+      layerEl.appendChild(g);
+    }
+  }
+}
+
+if (typeof globalThis !== 'undefined') {
+  Object.assign(globalThis, {
+    WireManager, renderWiresSvg, renderFlowingMaterialsSvg,
+  });
+}

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NodeFactory · 节点工厂</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- 顶部栏 -->
+    <header class="top-bar">
+      <div class="brand">
+        <span class="brand-logo">⚙</span>
+        <span class="brand-name">NODE<span>FACTORY</span></span>
+      </div>
+      <div class="level-info">
+        <span class="level-label">关卡</span>
+        <span id="level-num" class="level-num">01</span>
+        <span class="level-sep">/</span>
+        <span id="level-total" class="level-total">04</span>
+        <span id="level-name" class="level-name">初识节点</span>
+      </div>
+      <div class="status-panel">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-text" id="status-text">就绪</span>
+      </div>
+    </header>
+
+    <div class="main">
+      <!-- 左侧工具栏 -->
+      <aside class="sidebar">
+        <div class="sidebar-title">工具箱</div>
+        <div id="toolbox" class="toolbox">
+          <!-- 节点由 JS 动态渲染 -->
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-title">目标需求</div>
+          <div id="target-panel" class="target-panel">
+            <!-- 目标由 JS 动态渲染 -->
+          </div>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-title">操作</div>
+          <div class="controls">
+            <button id="btn-run" class="btn btn-primary">
+              <span class="btn-icon">▶</span>运行
+            </button>
+            <button id="btn-pause" class="btn btn-warn" disabled>
+              <span class="btn-icon">⏸</span>暂停
+            </button>
+            <button id="btn-reset" class="btn btn-ghost">
+              <span class="btn-icon">⟲</span>重置
+            </button>
+            <div class="level-nav">
+              <button id="btn-prev" class="btn btn-small">◀ 上一关</button>
+              <button id="btn-next" class="btn btn-small">下一关 ▶</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-title">节点属性</div>
+          <div id="props-panel" class="props-panel">
+            <div class="props-empty">选择一个节点查看属性</div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 主画布区域 -->
+      <section class="canvas-wrap" id="canvas-wrap">
+        <svg id="svg-layer" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="grid-pattern" width="24" height="24" patternUnits="userSpaceOnUse">
+              <circle cx="1" cy="1" r="1" fill="#2a2f48" />
+            </pattern>
+            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="strong-glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="6" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <linearGradient id="wire-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#4fc3f7" />
+              <stop offset="100%" stop-color="#7c4dff" />
+            </linearGradient>
+          </defs>
+          <rect id="grid-bg" width="100%" height="100%" fill="url(#grid-pattern)" />
+          <g id="wires-layer"></g>
+          <g id="temp-wire-layer"></g>
+          <g id="nodes-layer"></g>
+          <g id="materials-layer"></g>
+        </svg>
+        <canvas id="fx-canvas"></canvas>
+
+        <!-- 拖拽时的幽灵节点 -->
+        <div id="drag-ghost" class="drag-ghost" style="display:none"></div>
+
+        <!-- 提示气泡 -->
+        <div id="toast" class="toast"></div>
+      </section>
+    </div>
+  </div>
+
+  <script src="levels.js"></script>
+  <script src="animation.js"></script>
+  <script src="nodes.js"></script>
+  <script src="connections.js"></script>
+  <script src="engine.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
