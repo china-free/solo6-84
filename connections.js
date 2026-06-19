@@ -90,10 +90,42 @@ class WireManager {
     const toPort   = toNode.inputs[wire.to.portIndex];
     const p0 = fromNode.getPortPos(fromPort);
     const p3 = toNode.getPortPos(toPort);
+
+    /* 重建前：记下每个流动材料的当前物理坐标 (x, y) */
+    const flowingPositions = [];
+    if (wire.arcTable && wire.flowing.length > 0) {
+      for (const f of wire.flowing) {
+        const info = pointAtDistance(wire.arcTable, f.distance);
+        flowingPositions.push({ f, x: info.x, y: info.y });
+      }
+    }
+
     const [cp1, cp2] = cubicControlPoints(p0, p3);
     wire.p0 = p0; wire.p1 = cp1; wire.p2 = cp2; wire.p3 = p3;
     wire.svgPath = bezierToSvgPath(p0, cp1, cp2, p3);
     wire.arcTable = buildArcLengthTable(p0, cp1, cp2, p3, 80);
+
+    /* 重建后：根据旧坐标反向查找新曲线上的最近点，重新计算 distance */
+    if (flowingPositions.length > 0) {
+      for (const { f, x, y } of flowingPositions) {
+        const newDist = this._findClosestDistance(wire.arcTable, x, y);
+        f.distance = Math.max(0, Math.min(newDist, wire.arcTable.total - 0.01));
+      }
+    }
+  }
+
+  /* 在新弧长表上二分查找离 (x,y) 最近的点，返回对应的 distance */
+  _findClosestDistance(arcTable, x, y) {
+    const samples = arcTable.samples;
+    let bestIdx = 0;
+    let bestDistSq = Infinity;
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i];
+      const dx = s.x - x, dy = s.y - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestDistSq) { bestDistSq = d2; bestIdx = i; }
+    }
+    return samples[bestIdx].len;
   }
 
   rebuildAll() {

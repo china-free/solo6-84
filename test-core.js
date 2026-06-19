@@ -183,6 +183,52 @@ const r5 = wm.add(
   { nodeId: src.id, type: 'in', index: 0 });
 assert('target 无输出=连接失败(无对应out端口)', true); // target outputs=0 所以实际是端口不存在
 
+/* -------------- 4.5 修复验证：导线重建时材料位置不脱节 -------------- */
+console.log('\n--- 4.5 导线重建材料位置保持测试 ---');
+/* 构造场景: src -> painter, 中间放一个材料在导线中点 */
+const gTest = new NodeGraph();
+const s1 = new GameNode('source', 0, 100, 'ts1');
+const p1 = new GameNode('painter', 500, 100, 'tp1');
+gTest.add(s1); gTest.add(p1);
+const wmTest = new WireManager(gTest);
+const wr = wmTest.add(
+  { nodeId: 'ts1', type: 'out', index: 0 },
+  { nodeId: 'tp1', type: 'in',  index: 0 });
+assert('测试导线创建成功', wr.ok);
+const wTest = wr.wire;
+
+/* 放置一个材料在导线 50% 位置 */
+const mat = { id: 'm1', shape: 'circle', color: 'red' };
+const oldTotal = wTest.arcTable.total;
+wTest.flowing.push({ material: mat, distance: oldTotal * 0.5 });
+const oldPos = pointAtDistance(wTest.arcTable, oldTotal * 0.5);
+console.log(`  导线总长=${oldTotal.toFixed(0)}, 材料原位置: (${oldPos.x.toFixed(1)}, ${oldPos.y.toFixed(1)})`);
+
+/* 现在把 target 节点从 y=100 拖到 y=300, x=500 -> x=600（导线形状大变） */
+p1.x = 600;
+p1.y = 300;
+wmTest.rebuildWireGeometry(wTest);
+const newTotal = wTest.arcTable.total;
+console.log(`  重建后总长=${newTotal.toFixed(0)}, 材料新 distance=${wTest.flowing[0].distance.toFixed(1)}`);
+
+/* 检查材料的新位置 */
+const newPos = pointAtDistance(wTest.arcTable, wTest.flowing[0].distance);
+console.log(`  材料新位置: (${newPos.x.toFixed(1)}, ${newPos.y.toFixed(1)})`);
+
+/* 预期：distance 被重新映射，不再是旧的 50% */
+assert('重建后 distance 被重新映射', wTest.flowing[0].distance !== oldTotal * 0.5,
+  `distance 没有变化: ${wTest.flowing[0].distance} vs ${oldTotal*0.5}`);
+assert('新位置大致在新曲线上',
+  newPos.x > 100 && newPos.x < 650 && newPos.y > 100 && newPos.y < 350,
+  `新位置 (${newPos.x.toFixed(1)},${newPos.y.toFixed(1)}) 不在合理范围`);
+
+/* 额外验证：_findClosestDistance 工具函数正确工作 */
+const wmTmp = new WireManager(new NodeGraph());
+const testArc = buildArcLengthTable({x:0,y:0},{x:150,y:0},{x:250,y:0},{x:400,y:0}, 40);
+const d = wmTmp._findClosestDistance(testArc, 200, 0);
+console.log(`  测试 _findClosestDistance: 找 x=200 得到 distance=${d.toFixed(1)} (期望≈200)`);
+assert('_findClosestDistance 正确', Math.abs(d - 200) < 10, `实际=${d.toFixed(1)}`);
+
 /* 5. Engine 拓扑排序 -------------- */
 console.log('\n--- 5. DAG 执行引擎 ---');
 /* 重建一个干净的图用于引擎测试 */
